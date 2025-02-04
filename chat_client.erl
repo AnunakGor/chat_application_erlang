@@ -1,6 +1,6 @@
 -module(chat_client).                    
   
--export([start/1, send/1, send_private/2, list_clients/0, disconnect/0, loop/1]).
+-export([start/1, send/1, send_private/2, list_clients/0, disconnect/0, loop/1, get_server_node/1]).
 
 start(Username) ->
     case whereis(chat_client) of
@@ -13,7 +13,20 @@ start(Username) ->
             {error, already_running}
     end.
 
+get_server_node(SName) ->
+    {ok, Hostname} = inet:gethostname(),
+    FullName = SName ++ "@" ++ Hostname,
+    list_to_atom(FullName).
+
 init_client(Username) ->
+    ServerNode = get_server_node("server"),
+    case net_adm:ping(ServerNode) of
+        pong ->
+            io:format("Successfully connected to server node ~p~n", [ServerNode]);
+        pang ->
+            io:format("WARNING: Could not connect to server node ~p. Check that the server is running and reachable.~n", [ServerNode])
+    end,
+    timer:sleep(1000),
     Self = self(),
     case chat_server:connect(Username, Self) of
         {ok, History} ->
