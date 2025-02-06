@@ -11,7 +11,6 @@
     private_message/3,
     get_history/0,
     server_info/0,
-    %% admin functions
     set_topic/2,
     get_topic/0,
     get_admins/0,
@@ -40,6 +39,7 @@
     muted = #{},               %% map: Username -> UnmuteTime (timestamp in sec)
     offline = #{}              %% map: Username -> list of offline private messages
 }).
+
 
 start_link(Capacity, HistoryCount) ->
     gen_server:start_link({global, ?MODULE}, ?MODULE, {Capacity, HistoryCount}, []).
@@ -88,7 +88,6 @@ unmute(Admin, Target) ->
 
 promote(Admin, Target) ->
     gen_server:call({global, ?MODULE}, {promote, Admin, Target}).
-
 
 init({Capacity, HistoryCount}) ->
     {ok, #state{capacity = Capacity, history_count = HistoryCount}}.
@@ -156,15 +155,10 @@ handle_call(server_info, _From, State = #state{clients = Clients, history = Hist
 handle_call(stop, _From, State) ->
     {stop, normal, ok, State};
 
-handle_call({set_topic, Admin, NewTopic}, _From, State = #state{admins = Admins}) ->
-    case lists:member(Admin, Admins) of
-         false ->
-              {reply, {error, "You are not allowed to change the topic."}, State};
-         true ->
-              NewState = State#state{topic = NewTopic},
-              broadcast({topic, NewTopic}, State#state.clients),
-              {reply, ok, NewState}
-    end;
+handle_call({set_topic, _User, NewTopic}, _From, State) ->
+    NewState = State#state{topic = NewTopic},
+    broadcast({topic, NewTopic}, State#state.clients),
+    {reply, ok, NewState};
 
 handle_call(get_topic, _From, State = #state{topic = Topic}) ->
     {reply, Topic, State};
@@ -181,7 +175,7 @@ handle_call({kick, Admin, Target}, _From, State = #state{admins = Admins, client
                   error ->
                       {reply, {error, "User not found."}, State};
                   {ok, Pid} ->
-                      Pid ! {kick, Target},
+                      Pid ! {kick_notice, Target},
                       NewClients = maps:remove(Target, Clients),
                       broadcast({exit, Target}, NewClients),
                       {reply, ok, State#state{clients = NewClients}}
@@ -284,7 +278,6 @@ terminate(_Reason, _State) ->
 
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
-
 
 broadcast(Message, Clients) ->
     io:format("Broadcasting message: ~p~n", [Message]),
