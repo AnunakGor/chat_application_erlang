@@ -155,10 +155,20 @@ handle_call(server_info, _From, State = #state{clients = Clients, history = Hist
 handle_call(stop, _From, State) ->
     {stop, normal, ok, State};
 
-handle_call({set_topic, _User, NewTopic}, _From, State) ->
-    NewState = State#state{topic = NewTopic},
-    broadcast({topic, NewTopic}, State#state.clients),
-    {reply, ok, NewState};
+% handle_call({set_topic, _User, NewTopic}, _From, State) ->
+%     NewState = State#state{topic = NewTopic},
+%     broadcast({topic, NewTopic}, State#state.clients),
+%     {reply, ok, NewState};
+handle_call({set_topic, Admin, NewTopic}, _From, State = #state{admins = Admins}) ->
+    case lists:member(Admin, Admins) of
+         false ->
+              {reply, {error, "You are not allowed to change the topic."}, State};
+         true ->
+              NewState = State#state{topic = NewTopic},
+              broadcast({topic, NewTopic}, State#state.clients),
+              {reply, ok, NewState}
+    end;                    
+  
 
 handle_call(get_topic, _From, State = #state{topic = Topic}) ->
     {reply, Topic, State};
