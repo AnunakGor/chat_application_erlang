@@ -1,4 +1,4 @@
--module(client_doc).
+-module(chat_client).
 
 -export([
     start/1,
