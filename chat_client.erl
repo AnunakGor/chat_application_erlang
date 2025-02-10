@@ -1,8 +1,24 @@
--module(chat_client).
+-module(client_doc).
 
--export([start/1, send/1, send_private/2, list_clients/0, disconnect/0, loop/1,
-         get_server_node/1,
-         set_topic/1, kick/1, mute/2, unmute/1, promote/1, get_topic/0, get_admins/0]).
+-export([
+    start/1,
+    send/1,
+    send_private/2,
+    list_clients/0,
+    disconnect/0,
+    loop/1,
+    get_server_node/1,
+    set_topic/1,
+    kick/1,
+    mute/2,
+    unmute/1,
+    promote/1,
+    get_topic/0,
+    get_admins/0
+]).
+
+%% @doc Starts the chat client with a given username.
+-spec start(string()) -> {ok, pid()} | {error, already_running}.
 start(Username) ->
     case whereis(chat_client) of
         undefined ->
@@ -14,11 +30,15 @@ start(Username) ->
             {error, already_running}
     end.
 
+%% @doc Constructs the server node name from a given server short name.
+-spec get_server_node(string()) -> atom().
 get_server_node(SName) ->
     {ok, Hostname} = inet:gethostname(),
     FullName = SName ++ "@" ++ Hostname,
     list_to_atom(FullName).
 
+%% @doc Initializes the chat client process and connects to the server.
+-spec init_client(string()) -> no_return().
 init_client(Username) ->
     ServerNode = get_server_node("server"),
     case net_adm:ping(ServerNode) of
@@ -38,6 +58,8 @@ init_client(Username) ->
             loop(Username)
     end.
 
+%% @doc Sends a public message via the chat client.
+-spec send(string()) -> ok | {error, not_started}.
 send(Message) ->
     case whereis(chat_client) of
         undefined ->
@@ -48,6 +70,8 @@ send(Message) ->
             ok
     end.
 
+%% @doc Sends a private message to a specified user.
+-spec send_private(string(), string()) -> ok | {error, not_started}.
 send_private(To, Message) ->
     case whereis(chat_client) of
         undefined ->
@@ -58,11 +82,15 @@ send_private(To, Message) ->
             ok
     end.
 
+%% @doc Lists all connected clients by querying the chat server.
+-spec list_clients() -> [string()].
 list_clients() ->
     Clients = chat_server:list_clients(),
     io:format("Connected clients: ~p~n", [Clients]),
     Clients.
 
+%% @doc Disconnects the chat client from the server.
+-spec disconnect() -> ok | {error, not_started}.
 disconnect() ->
     case whereis(chat_client) of
         undefined ->
@@ -73,36 +101,52 @@ disconnect() ->
             ok
     end.
 
+%% @doc Sends a request to change the chat topic.
+-spec set_topic(string()) -> ok.
 set_topic(NewTopic) ->
     chat_client ! {set_topic, NewTopic},
     ok.
 
+%% @doc Sends a kick request for a specified user.
+-spec kick(string()) -> ok.
 kick(Target) ->
     chat_client ! {kick, Target},
     ok.
 
+%% @doc Sends a mute request for a specified user for a given duration (in seconds).
+-spec mute(string(), pos_integer()) -> ok.
 mute(Target, Duration) ->
     chat_client ! {mute, Target, Duration},
     ok.
 
+%% @doc Sends an unmute request for a specified user.
+-spec unmute(string()) -> ok.
 unmute(Target) ->
     chat_client ! {unmute, Target},
     ok.
 
+%% @doc Sends a request to promote a specified user to admin.
+-spec promote(string()) -> ok.
 promote(Target) ->
     chat_client ! {promote, Target},
     ok.
 
+%% @doc Retrieves the current chat topic from the server.
+-spec get_topic() -> string().
 get_topic() ->
     Topic = chat_server:get_topic(),
     io:format("Current topic: ~s~n", [Topic]),
     Topic.
 
+%% @doc Retrieves the list of admin users from the server.
+-spec get_admins() -> [string()].
 get_admins() ->
     Admins = chat_server:get_admins(),
     io:format("Admin users: ~p~n", [Admins]),
     Admins.
 
+%% @doc The main loop for handling incoming messages for the chat client.
+-spec loop(string()) -> no_return().
 loop(Username) ->
     receive
         {history, History} ->
@@ -175,3 +219,5 @@ loop(Username) ->
             io:format("Unknown message: ~p~n", [Other]),
             loop(Username)
     end.
+
+
