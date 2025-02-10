@@ -1,6 +1,7 @@
 -module(chat_server).
 -behaviour(gen_server).
 
+%% API Functions
 -export([
     start_link/2,
     stop/0,
@@ -20,6 +21,7 @@
     promote/2
 ]).
 
+%% gen_server callbacks
 -export([
     init/1,
     handle_call/3,
@@ -28,6 +30,9 @@
     terminate/2,
     code_change/3
 ]).
+
+%% Internal functions
+-export([broadcast/2]).
 
 -record(state, {
     capacity,             %% maximum number of clients allowed
@@ -40,58 +45,108 @@
     offline = #{}              %% map: Username -> list of offline private messages
 }).
 
+-type state() :: #state{
+    capacity      :: pos_integer(),
+    history_count :: pos_integer(),
+    clients       :: map(),
+    history       :: [term()],
+    topic         :: string(),
+    admins        :: [string()],
+    muted         :: map(),
+    offline       :: map()
+}.
 
+%% @doc Starts the chat server process with a given capacity and history count.
+-spec start_link(pos_integer(), pos_integer()) -> {ok, pid()} | {error, term()}.
 start_link(Capacity, HistoryCount) ->
     gen_server:start_link({global, ?MODULE}, ?MODULE, {Capacity, HistoryCount}, []).
 
+%% @doc Stops the chat server.
+-spec stop() -> ok.
 stop() ->
     gen_server:call({global, ?MODULE}, stop).
 
+%% @doc Connects a client to the chat server.
+-spec connect(string(), pid()) -> {ok, [term()]} | {error, term()}.
 connect(Username, ClientPid) ->
     gen_server:call({global, ?MODULE}, {connect, Username, ClientPid}).
 
+%% @doc Disconnects a client from the chat server.
+-spec disconnect(string()) -> ok | {error, not_connected}.
 disconnect(Username) ->
     gen_server:call({global, ?MODULE}, {disconnect, Username}).
 
+%% @doc Sends a chat message from the specified client.
+-spec send_message(string(), string()) -> ok.
 send_message(Username, Message) ->
     gen_server:cast({global, ?MODULE}, {send_message, Username, Message}).
 
+%% @doc Returns the list of currently connected clients.
+-spec list_clients() -> [string()].
 list_clients() ->
     gen_server:call({global, ?MODULE}, list_clients).
 
+%% @doc Sends a private message from one client to another.
+-spec private_message(string(), string(), string()) -> ok.
 private_message(From, To, Message) ->
     gen_server:cast({global, ?MODULE}, {private_message, From, To, Message}).
 
+%% @doc Retrieves the chat history.
+-spec get_history() -> [term()].
 get_history() ->
     gen_server:call({global, ?MODULE}, get_history).
 
+%% @doc Retrieves information about the server (clients and chat history).
+-spec server_info() -> map().
 server_info() ->
     gen_server:call({global, ?MODULE}, server_info).
 
+%% @doc Sets the chat room topic if the requester is an admin.
+-spec set_topic(string(), string()) -> ok | {error, string()}.
 set_topic(Admin, NewTopic) ->
     gen_server:call({global, ?MODULE}, {set_topic, Admin, NewTopic}).
 
+%% @doc Gets the current chat room topic.
+-spec get_topic() -> string().
 get_topic() ->
     gen_server:call({global, ?MODULE}, get_topic).
 
+%% @doc Returns the list of admin users.
+-spec get_admins() -> [string()].
 get_admins() ->
     gen_server:call({global, ?MODULE}, get_admins).
 
+%% @doc Kicks a user from the chat server if the requester is an admin.
+-spec kick(string(), string()) -> ok | {error, string()}.
 kick(Admin, Target) ->
     gen_server:call({global, ?MODULE}, {kick, Admin, Target}).
 
+%% @doc Mutes a user for a given duration (in seconds) if the requester is an admin.
+-spec mute(string(), string(), pos_integer()) -> ok | {error, string()}.
 mute(Admin, Target, Duration) ->
     gen_server:call({global, ?MODULE}, {mute, Admin, Target, Duration}).
 
+%% @doc Unmutes a user if the requester is an admin.
+-spec unmute(string(), string()) -> ok | {error, string()}.
 unmute(Admin, Target) ->
     gen_server:call({global, ?MODULE}, {unmute, Admin, Target}).
 
+%% @doc Promotes a user to admin if the requester is an admin.
+-spec promote(string(), string()) -> ok | {error, string()}.
 promote(Admin, Target) ->
     gen_server:call({global, ?MODULE}, {promote, Admin, Target}).
 
+%% gen_server Callback Functions
+
+%% @doc Initializes the chat server state.
+-spec init({pos_integer(), pos_integer()}) -> {ok, state()}.
 init({Capacity, HistoryCount}) ->
     {ok, #state{capacity = Capacity, history_count = HistoryCount}}.
 
+%% @doc Handles synchronous calls to the server.
+-spec handle_call(term(), {pid(), term()}, state()) ->
+          {reply, term(), state()} |
+          {stop, term(), term(), state()}.
 handle_call({connect, Username, ClientPid}, _From, State = #state{
     clients = Clients, capacity = Capacity, history = History, admins = Admins, topic = Topic, offline = Offline
 }) ->
@@ -155,10 +210,6 @@ handle_call(server_info, _From, State = #state{clients = Clients, history = Hist
 handle_call(stop, _From, State) ->
     {stop, normal, ok, State};
 
-% handle_call({set_topic, _User, NewTopic}, _From, State) ->
-%     NewState = State#state{topic = NewTopic},
-%     broadcast({topic, NewTopic}, State#state.clients),
-%     {reply, ok, NewState};
 handle_call({set_topic, Admin, NewTopic}, _From, State = #state{admins = Admins}) ->
     case lists:member(Admin, Admins) of
          false ->
@@ -167,8 +218,7 @@ handle_call({set_topic, Admin, NewTopic}, _From, State = #state{admins = Admins}
               NewState = State#state{topic = NewTopic},
               broadcast({topic, NewTopic}, State#state.clients),
               {reply, ok, NewState}
-    end;                    
-  
+    end;
 
 handle_call(get_topic, _From, State = #state{topic = Topic}) ->
     {reply, Topic, State};
@@ -223,6 +273,8 @@ handle_call({promote, Admin, Target}, _From, State = #state{admins = Admins}) ->
               {reply, ok, State#state{admins = NewAdmins}}
     end.
 
+%% @doc Handles asynchronous cast messages.
+-spec handle_cast(term(), state()) -> {noreply, state()}.
 handle_cast({send_message, Username, Message}, State = #state{
     clients = Clients, history = History, muted = Muted
 }) ->
@@ -258,7 +310,6 @@ handle_cast({private_message, From, To, Message}, State = #state{
             case maps:find(From, Clients) of
                 {ok, FromPid} ->
                     FromPid ! {error, {user_offline, To}},
-                    % FromPid ! {error, {"User is not yet online on this server", To}},
                     ok;
                 error ->
                     ok
@@ -280,15 +331,25 @@ handle_cast({private_message, From, To, Message}, State = #state{
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
+%% @doc Handles all other messages.
+-spec handle_info(term(), state()) -> {noreply, state()}.
 handle_info(_Info, State) ->
     {noreply, State}.
 
+%% @doc Called when the server is terminated.
+-spec terminate(term(), state()) -> any().
 terminate(_Reason, _State) ->
     ok.
 
+%% @doc Handles code upgrades.
+-spec code_change(term(), state(), term()) -> {ok, state()}.
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
+%% Internal Functions
+
+%% @doc Broadcasts a message to all connected clients.
+-spec broadcast(term(), map()) -> ok.
 broadcast(Message, Clients) ->
     io:format("Broadcasting message: ~p~n", [Message]),
     lists:foreach(fun({_Username, Pid}) ->
