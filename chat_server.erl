@@ -346,8 +346,6 @@ terminate(_Reason, _State) ->
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
-%% Internal Functions
-
 %% @doc Broadcasts a message to all connected clients.
 -spec broadcast(term(), map()) -> ok.
 broadcast(Message, Clients) ->
