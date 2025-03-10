@@ -1,4 +1,4 @@
--module(tmp_tests).
+-module(test).
 -include_lib("eunit/include/eunit.hrl").
 -eunit([{parallel, false}]).
 
