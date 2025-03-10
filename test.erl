@@ -36,6 +36,17 @@ bob_wait_for_error(TestClient) ->
     after 2000 ->
          timeout
     end.
+%% Helper for Charlie's process: Forward only private messages.
+charlie_loop(TestClient) ->
+    receive
+        Msg = {private, _, _, _, _} ->
+            TestClient ! {charlie_msg, Msg},
+            charlie_loop(TestClient);
+        _Other ->
+            charlie_loop(TestClient)
+    after 2000 ->
+         ok
+    end.
 
 member(Element, List) ->
     lists:member(Element, List).
@@ -85,17 +96,28 @@ private_message_online_test() ->
     maybe_stop_server(),
     {ok, _Pid} = chat_server:start_link(3, 10),
     TestClient = self(),
-    TestClient2 = spawn(fun() -> bob_loop(TestClient) end),
+    BobProcess = spawn(fun() -> bob_loop(TestClient) end),
+    CharlieProcess = spawn(fun() -> charlie_loop(TestClient) end),
     {ok, _History1} = chat_server:connect("Alice", TestClient),
-    {ok, _History2} = chat_server:connect("Bob", TestClient2),
+    {ok, _History2} = chat_server:connect("Bob", BobProcess),
+    {ok, _History3} = chat_server:connect("Charlie", CharlieProcess),
     chat_server:private_message("Alice", "Bob", "Secret message"),
+    %% Wait for Bob's expected private message:
     receive
         {private, "Alice", "Bob", "Secret message", _Ts} -> ok
     after 1000 ->
         ?assert(false)
     end,
+    %% Ensure that Charlie did NOT receive any message:
+    receive
+        {charlie_msg, _Msg} ->
+            ?assert(false)
+    after 500 ->
+         ok
+    end,
     ok = chat_server:disconnect("Alice"),
     ok = chat_server:disconnect("Bob"),
+    ok = chat_server:disconnect("Charlie"),
     ok = chat_server:stop().
 
 %% Test: setting Topic by Admin.
@@ -184,5 +206,4 @@ mute_persistence_test() ->
     ok = chat_server:disconnect("AdminUser"),
     ok = chat_server:disconnect("Bob"),
     ok = chat_server:stop().
-
 
